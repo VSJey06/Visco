@@ -84,11 +84,39 @@ in hand, not a desktop workstation.
   320 px and 390 px widths
 - Passing lint and production build with no new runtime dependencies
 
+### Milestone 3 — PDF upload and text extraction
+
+- Local PDF upload through a file picker and drag-and-drop, restricted to PDF
+  files with clear invalid-file, corrupted-file, and empty-file errors
+- In-browser text extraction with PDF.js, page by page, preserving page
+  numbers, line boundaries, and the document's own reading order
+- Document metadata extraction when the PDF provides it
+- Heuristic chapter and section detection from text patterns and formatting
+  information, with detected headings kept distinct from confirmed structure
+- Page ranges recorded for every detected chapter and section
+- Pages with little or no extractable text marked as requiring OCR, with an
+  explicit warning that OCR is not implemented
+- A document workspace with upload, extraction progress and cancellation,
+  metadata summary, reading map, page navigation, and per-page extracted text
+- Extraction progress reporting and cancellation with full cleanup of the
+  PDF.js loading task and temporary object URL
+- The graph remains mounted and unchanged behind the document workspace
+- Verified against a normal PDF, a multi-page PDF, a PDF with two-column and
+  table formatting, a scanned PDF, invalid and corrupted files, and a
+  160-page PDF
+
 ## Current limitations
 
-- Content is a local sample fixture; there is no document ingestion or
-  authoring.
+- Content is a local sample fixture; there is no graph authoring, and no AI
+  extraction of document text into knowledge nodes.
 - There is no persistence, search, back/forward trail, or empty-state flow.
+- OCR is not implemented. Pages that need it are only flagged.
+- Heading detection is heuristic. It can miss headings that use unusual
+  styling and can flag false positives on short, bold, or numbered lines.
+- Extracted text is plain text. Page images, layout fidelity, tables, and
+  figures are not reproduced.
+- Reading order follows the PDF's own content order. Documents that encode
+  text in an unusual order may extract in that order.
 - Cytoscape is imported eagerly. Code-splitting is deferred because the graph
   is the primary screen rather than a secondary route.
 - There is no automated test runner yet. Graph data and interactions have been
@@ -107,8 +135,8 @@ explicit approval:
 - Authentication or user accounts
 - Backend services or APIs
 - Databases or remote persistence
-- PDF extraction or document ingestion
 - AI APIs or generated content
+- OCR implementation
 - Android or other native mobile tooling
 - Graph editing, authoring, search, trails, or other exploration features
 
@@ -135,4 +163,24 @@ explicit approval:
 - Selected-endpoint, incident-edge, and dimmed-context styles remain distinct.
 - Mobile pan, pinch, selection, and panel behavior continue to work at 320 px
   and 390 px widths.
+- `npm run build` and `npm run lint` complete without errors.
+
+## Milestone 3 success criteria
+
+- A PDF can be uploaded by file picker or drag-and-drop, and non-PDF files are
+  rejected with a clear message.
+- Text is extracted page by page with correct page counts, page numbers, and
+  readable reading order.
+- Document metadata is shown when the PDF provides it.
+- Likely chapters and sections are detected from patterns and formatting, are
+  labelled as detected rather than confirmed, and carry page ranges. Missing
+  headings are never invented.
+- Pages with little or no text are flagged as needing OCR, and the interface
+  states plainly that OCR is not available.
+- Extraction progress is visible, cancellation stops the work, and temporary
+  resources are released.
+- The graph renders and behaves exactly as before, including while the
+  document workspace is open.
+- The upload and document interfaces work at 320 px and 390 px widths without
+  horizontal overflow.
 - `npm run build` and `npm run lint` complete without errors.

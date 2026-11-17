@@ -67,6 +67,61 @@
   letter-spacing: 0.02em;
 }
 
+.app-header__actions {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  margin-left: auto;
+}
+
+.app-header__import {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: 2.5rem;
+  padding: 0 0.85rem;
+  border: 1px solid rgba(127, 224, 195, 0.28);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    color 150ms ease,
+    transform 150ms ease;
+}
+
+.app-header__import svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.app-header__import:hover {
+  border-color: rgba(127, 224, 195, 0.55);
+  background: rgba(127, 224, 195, 0.18);
+  color: var(--text-strong);
+}
+
+.app-header__import:active {
+  transform: scale(0.97);
+}
+
+.app-header__import:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .graph-stage {
   position: relative;
   flex: 1 1 auto;
@@ -493,6 +548,21 @@
   }
 }
 
+@media (max-width: 39.999rem) {
+  .app-header {
+    gap: 0.65rem;
+  }
+
+  .app-header__import {
+    width: 2.5rem;
+    padding: 0;
+  }
+
+  .app-header__import span {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .detail-panel {
     animation: none;
@@ -500,7 +570,8 @@
 
   .graph-controls__button,
   .detail-panel__close,
-  .edge-label {
+  .edge-label,
+  .app-header__import {
     transition: none;
   }
 }

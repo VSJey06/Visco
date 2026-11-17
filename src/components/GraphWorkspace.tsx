@@ -16,9 +16,15 @@ type GraphWorkspaceProps = {
   subject: string
   nodes: KnowledgeNode[]
   edges: KnowledgeEdge[]
+  onOpenDocument?: () => void
 }
 
-function GraphWorkspace({ subject, nodes, edges }: GraphWorkspaceProps) {
+function GraphWorkspace({
+  subject,
+  nodes,
+  edges,
+  onOpenDocument,
+}: GraphWorkspaceProps) {
   const graphRef = useRef<GraphHandle>(null)
   const stageRef = useRef<HTMLElement>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
@@ -130,6 +136,24 @@ function GraphWorkspace({ subject, nodes, edges }: GraphWorkspaceProps) {
         <p className="app-header__hint">
           Drag to pan · scroll or pinch to zoom
         </p>
+        {onOpenDocument ? (
+          <div className="app-header__actions">
+            <button
+              type="button"
+              className="app-header__import"
+              onClick={onOpenDocument}
+              aria-label="Open a PDF in the document workspace"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+                <path d="M14 3v5h5" />
+                <path d="M9 13h6" />
+                <path d="M9 16h4" />
+              </svg>
+              <span>Import PDF</span>
+            </button>
+          </div>
+        ) : null}
       </header>
 
       <main

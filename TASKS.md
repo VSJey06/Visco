@@ -4,6 +4,7 @@
 
 - [x] Milestone 2 — Interactive graph prototype
 - [x] Milestone 2.1 — Mobile graph UX refinement
+- [x] Milestone 3 — PDF upload and text extraction
 
 Phase 2 remains open for the later exploration items listed below.
 
@@ -69,7 +70,6 @@ Phase 2 remains open for the later exploration items listed below.
 - [ ] Run accessibility checks for keyboard and screen-reader use
 - [ ] Profile on a low-end mobile viewport
 - [ ] Finalise documentation after review feedback
-
 ## Milestone 2 verification (complete)
 
 - [x] `npm run lint`
@@ -129,6 +129,62 @@ Phase 2 remains open for the later exploration items listed below.
 - [x] Touch pan and pinch zoom continue to work
 - [x] No runtime console errors
 
+## Milestone 3 — PDF upload and text extraction (complete)
+
+- [x] Add `pdfjs-dist` as the only new runtime dependency
+- [x] Define document metadata, page, text block, heading, chapter, section,
+      and extraction status types
+- [x] Accept PDF files through a file picker and drag-and-drop
+- [x] Reject non-PDF files, empty files, and damaged PDFs with clear errors
+- [x] Extract text page by page with progress reporting and cancellation
+- [x] Preserve page numbers, line boundaries, and reading order
+- [x] Extract document metadata when available
+- [x] Detect likely chapter and section headings from text and formatting
+- [x] Mark detected headings as detected rather than confirmed
+- [x] Record page ranges for detected chapters and sections
+- [x] Flag pages with little or no text as requiring OCR
+- [x] State plainly that OCR is not implemented
+- [x] Build the document workspace: upload, progress, summary, reading map,
+      page viewer, and error states
+- [x] Support removing the current document and starting over
+- [x] Release the PDF.js loading task and temporary object URL on completion,
+      cancellation, and failure
+- [x] Keep the graph mounted and unchanged behind the document workspace
+- [x] Lazy-load the document workspace and PDF.js so the graph stays fast
+- [x] Verify the upload and document interfaces at 320 px and 390 px widths
+- [x] No runtime network requests; documents never leave the browser
+
+### Known limitations
+
+- Heading detection is heuristic. Short, bold, uppercase, or numbered body
+  lines can be flagged, and headings with unusual styling can be missed.
+- OCR is not implemented. Pages needing it are flagged, not read.
+- Extracted text is plain text. Page images, layout, tables, and figures are
+  not reproduced.
+- Reading order follows the PDF's own content order.
+- No PDF.js configuration options are exposed; the extractor uses defaults.
+
+## Milestone 3 verification (complete)
+
+- [x] `npm run lint`
+- [x] `npm run build`
+- [x] Normal text-based PDF: 4 pages, 8 detected headings, correct outline and
+      page ranges
+- [x] Multi-page PDF: page count, page navigation, and per-page text verified
+- [x] PDF with unusual formatting: two-column text and a table extract in
+      reading order
+- [x] Scanned PDF: 2 pages flagged as requiring OCR, 0 invented headings
+- [x] Invalid file, corrupted PDF, and wrong file type: clear error states
+- [x] Extraction progress visible; cancellation stops the work and reports it
+- [x] Large PDF: 160 pages and 160 detected headings, page 160 reachable
+- [x] Graph selection survives opening the workspace; Escape in the workspace
+      closes it without clearing the graph selection
+- [x] Mobile upload and document interfaces at 320 px and 390 px with no
+      horizontal overflow
+- [x] Production build serves the workspace chunk, PDF.js chunk, and worker
+      correctly
+- [x] No runtime console errors
+
 ## Backlog — not approved
 
 These items are recorded only so they are not accidentally introduced:
@@ -136,8 +192,8 @@ These items are recorded only so they are not accidentally introduced:
 - Authentication or accounts
 - Backend services
 - Database or cloud sync
-- PDF extraction or file ingestion
-- AI APIs or generated summaries
+- OCR implementation
+- AI extraction of document text into knowledge nodes
 - Android or native app tooling
 - Import/export formats
 - Graph editing, search, and trails before explicit approval

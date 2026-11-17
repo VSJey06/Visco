@@ -2,11 +2,13 @@
 
 ## Status
 
-Milestones 2 and 2.1 are complete: a local interactive Cytoscape knowledge
+Milestones 2, 2.1, and 3 are complete: a local interactive Cytoscape knowledge
 graph with pan/zoom, progressive disclosure, collision-aware curved edge
 labels, concept/connection detail panels, and viewport fitting for selected
-edge endpoints. Content is still a development fixture; ingestion, persistence,
-authoring, and networking are not implemented.
+edge endpoints; plus a document workspace that extracts PDF text in the browser
+with page numbers, detected structure, and OCR warnings. Graph content is still
+a development fixture. AI extraction, OCR, persistence, authoring, and
+networking are not implemented.
 
 ## Stack
 
@@ -17,9 +19,10 @@ authoring, and networking are not implemented.
 | Build tool | Vite 8 | Dev server, production bundling |
 | Graph renderer | Cytoscape.js 3.35 | Canvas rendering, gestures, selection, viewport |
 | Label overlay | SVG | `textPath` labels on the same Bézier curves |
+| PDF parsing | PDF.js (`pdfjs-dist`) 6.5 | In-browser text extraction and metadata |
 | Linting | Oxlint | Configured with React and TypeScript rules |
 | Styling | Plain CSS | No CSS framework or runtime style library |
-| State | React local state | Selection and viewport state in the workspace |
+| State | React local state | Selection, viewport, and document state in the workspace |
 | Routing | None | Single screen |
 
 ## Constraints
@@ -31,8 +34,9 @@ authoring, and networking are not implemented.
 - **Lightweight:** avoid dependencies that duplicate built-in capabilities.
   Keep the production bundle small and startup work minimal.
 - **No network dependency at runtime:** the app reads local sample data and
-  makes no API calls.
-- **No backend, auth, database, ingestion, or AI services** in this phase.
+  makes no API calls. Uploaded PDFs are parsed in the browser and never leave
+  the device.
+- **No backend, auth, database, or AI services** in this phase.
 - **Read-only graph:** nodes and edges cannot be edited or created yet.
 
 ## Directory structure
@@ -55,10 +59,13 @@ Visco/
 │   ├── App.css
 │   ├── index.css
 │   ├── types/
-│   │   └── graph.ts
+│   │   ├── graph.ts
+│   │   └── document.ts
 │   ├── lib/
 │   │   ├── disclosure.ts
-│   │   └── edgeLabels.ts
+│   │   ├── edgeLabels.ts
+│   │   ├── pdfExtractor.ts
+│   │   └── documentFormat.ts
 │   ├── data/
 │   │   └── sampleGraph.ts
 │   └── components/
@@ -67,7 +74,12 @@ Visco/
 │       ├── CurvedEdgeLabels.tsx
 │       ├── GraphControls.tsx
 │       ├── NodeDetailPanel.tsx
-│       └── EdgeDetailPanel.tsx
+│       ├── EdgeDetailPanel.tsx
+│       ├── DocumentWorkspace.tsx
+│       ├── PdfUpload.tsx
+│       ├── ExtractionProgress.tsx
+│       ├── DocumentOutline.tsx
+│       └── ExtractedTextViewer.tsx
 ├── PROJECT.md
 ├── ARCHITECTURE.md
 ├── TASKS.md
@@ -260,6 +272,147 @@ map clipped; deeper zoom levels preserve the learner's viewport.
   below the relations threshold, or when the label path exceeds the steep-path
   limit. The connection detail panel always displays the relationship text.
 
+## Document architecture
+
+### Composition
+
+- `src/App.tsx` renders `GraphWorkspace` and a lazy-loaded `DocumentWorkspace`.
+  The graph stays mounted behind the workspace so opening a document never
+  rebuilds or resets it.
+- `DocumentWorkspace` owns the document lifecycle: upload, extraction, error,
+  cancellation, and removal. It renders one of four states — upload, progress,
+  error, or ready.
+- `PdfUpload` is presentational. It handles the file picker and drag-and-drop
+  and reports the chosen file upward.
+- `ExtractionProgress` shows status, percentage, and the cancel action.
+- `DocumentOutline` renders detected chapters and sections with page ranges.
+- `ExtractedTextViewer` renders one page at a time with page navigation.
+- `src/lib/pdfExtractor.ts` owns all PDF.js work. `src/lib/documentFormat.ts`
+  owns display formatting for sizes, dates, and page ranges.
+
+### Document data model
+
+`src/types/document.ts` defines the document types:
+
+```ts
+type DocumentMetadata = {
+  title: string | null
+  author: string | null
+  subject: string | null
+  keywords: string | null
+  creator: string | null
+  producer: string | null
+  creationDate: string | null
+  modificationDate: string | null
+}
+
+type DocumentTextBlock = {
+  id: string
+  pageNumber: number
+  text: string
+  fontSize: number
+  isBold: boolean
+  heading: DocumentHeading | null
+}
+
+type ExtractedPage = {
+  pageNumber: number
+  width: number
+  height: number
+  text: string
+  blocks: DocumentTextBlock[]
+  characterCount: number
+  requiresOcr: boolean
+}
+
+type ExtractedDocument = {
+  fileName: string
+  fileSize: number
+  pageCount: number
+  metadata: DocumentMetadata
+  pages: ExtractedPage[]
+  chapters: DocumentChapter[]
+  sections: DocumentHeadingEntry[]
+  ocrPages: number[]
+  detectedHeadingCount: number
+}
+```
+
+Every `DocumentTextBlock` carries its own `pageNumber`, so page provenance
+survives regardless of how blocks are later grouped or displayed.
+
+### Extraction pipeline
+
+`extractPdf(file, { signal, onProgress })` runs the following steps:
+
+1. Validate the file type and size before any PDF.js work.
+2. Create an object URL for the `File` and hand it to PDF.js.
+3. Read the document metadata.
+4. Iterate pages in order. For each page, request its text content and build
+   lines and blocks, then yield to the browser so the interface stays
+   responsive.
+5. Report progress after each page.
+6. Release the PDF.js loading task and revoke the object URL in a `finally`
+   block, on success, failure, and cancellation alike.
+
+Cancellation uses an `AbortSignal`. The signal is checked between pages and
+raises a dedicated cancellation error that the workspace treats as a
+user-initiated stop rather than a failure.
+
+### Text and line reconstruction
+
+`buildLines` walks the text items in the order PDF.js returns them, which is
+the order the PDF itself draws them. Items continue the current line when they
+share a baseline, move left to right, and are not separated by a wide gap.
+Using the document's own order rather than sorting by coordinate preserves
+multi-column reading order, which coordinate sorting destroys.
+
+`buildBlocks` then groups lines into paragraphs using the dominant body font
+size, vertical gaps, and formatting changes, and `detectHeading` scores each
+block as a likely chapter or section using text patterns (chapter, section,
+appendix, and hierarchical numbering) together with relative font size, weight,
+case, and surrounding spacing.
+
+Detected headings carry `status: 'detected'`. There is no confirmed-structure
+state in this milestone, and headings are never synthesised: a document with no
+recognisable headings yields an empty outline.
+
+Page ranges are computed from heading order: a heading's range ends on the page
+before the next heading of the same or a higher level, and runs to the end of
+the document otherwise.
+
+### Scanned-page detection
+
+A page whose extracted text contains fewer than 40 non-whitespace characters is
+marked `requiresOcr`. The interface lists those pages and states explicitly
+that OCR is not implemented. No OCR engine, stub, or placeholder text is
+included.
+
+### Errors
+
+The extractor maps failures to a small set of codes: `not-pdf`, `empty-pdf`,
+`password-protected`, `invalid-pdf`, `page-failed`, and `extraction-failed`.
+Each code has a plain-language message, and the workspace shows the file name
+and size alongside retry and choose-another-file actions.
+
+### Integration with the graph
+
+The workspace is an overlay layered over the graph rather than a separate
+route. The graph keeps its mounted state, selection, and viewport while a
+document is open. Escape inside the workspace closes it and stops the event
+before the graph's own Escape handler runs, so the two layers do not conflict.
+Focus is trapped inside the overlay while it is open and returns to the import
+button when it closes.
+
+### Known limitations
+
+- Heading detection is heuristic and can produce false positives or misses.
+- OCR is not implemented; affected pages are flagged only.
+- Extracted text is plain text. Page images, layout, tables, and figures are
+  not reproduced.
+- Reading order follows the PDF's own content order.
+- PDF.js configuration options are not exposed.
+
 ## Integration rules
 
 1. **Keep Cytoscape at the boundary.** Runtime imports live in
@@ -271,14 +424,26 @@ map clipped; deeper zoom levels preserve the learner's viewport.
    desktop.
 4. **Use disclosure helpers.** Do not duplicate zoom thresholds in components.
 5. **Budget the bundle.** Re-measure after renderer or dependency changes.
-6. **No hidden network calls.** Sample data remains local in this phase.
+6. **No hidden network calls.** Sample data remains local, and uploaded PDFs
+   are parsed in the browser without any request.
+7. **Keep PDF.js in the service.** Components receive plain document types.
+   Only `pdfExtractor.ts` imports PDF.js, and it does so dynamically so the
+   parser is not part of the initial bundle.
+8. **Release what you acquire.** Any new object URL, worker, or PDF.js loading
+   task must be released on completion, failure, and cancellation.
+9. **Do not change graph behavior.** The document workspace layers over the
+   graph; it must not remount, re-layout, or reset it.
 
 ## Performance notes
 
 The current production build is approximately:
 
-- JavaScript: `700.06 kB` raw / `219.80 kB` gzip
-- CSS: `8.22 kB` raw / `2.55 kB` gzip
+- Initial JavaScript: `702.94 kB` raw / `221.02 kB` gzip
+- Initial CSS: `9.20 kB` raw / `2.72 kB` gzip
+- Document workspace JavaScript: `27.86 kB` raw / `8.45 kB` gzip
+- Document workspace CSS: `21.35 kB` raw / `4.41 kB` gzip
+- PDF.js chunk: `444.23 kB` raw / `133.64 kB` gzip
+- PDF.js worker: `1,271.91 kB`, loaded only when a PDF is opened
 
 Vite warns that the main JavaScript chunk exceeds 500 kB. Most of that is
 Cytoscape. Lazy-loading is currently deferred because the graph is the primary
@@ -286,6 +451,11 @@ screen; splitting the renderer would add a loading step without reducing the
 data needed for the first view. Revisit if a landing screen or non-graph route
 is introduced. Cytoscape style transitions and the SVG overlay use only simple
 shapes and no image assets.
+
+The document workspace and PDF.js are code-split. The workspace chunk is
+requested when the user opens the workspace, and the PDF.js chunk and worker
+are requested only when a PDF is actually parsed. Neither is part of the
+initial graph view.
 
 ## Testing strategy
 
@@ -304,11 +474,18 @@ There is no automated test runner configured. Current verification consists of:
     Escape
   - selected-edge endpoint fitting around the mobile sheet and desktop card
   - no unexpected console errors
+  - PDF upload by picker and drag-and-drop, page counts, page navigation,
+    detected headings and page ranges, scanned-page warnings, error states,
+    progress, cancellation, and cleanup
+  - a 160-page PDF for incremental extraction and interface responsiveness
+  - a two-column and table PDF for reading order
+  - graph selection preserved while the document workspace is open
+  - production preview serving the workspace chunk, PDF.js chunk, and worker
 
 Before the next feature milestone, add a lightweight runner (for example
-`node:test` or Vitest) for disclosure helpers, graph-data integrity, and edge
-label geometry. Browser-level smoke tests should then be committed rather than
-kept as temporary probes.
+`node:test` or Vitest) for disclosure helpers, graph-data integrity, edge
+label geometry, and PDF extraction helpers. Browser-level smoke tests should
+then be committed rather than kept as temporary probes.
 
 ## Decision log
 
@@ -327,4 +504,8 @@ kept as temporary probes.
 | Screen-size floor for node labels | Overview labels are unreadable if they scale down with the graph on phones |
 | No router or global state | One screen with local state is sufficient |
 | Eager renderer import | Graph is the primary screen; code-splitting deferred with a documented trigger |
+| PDF.js via `pdfjs-dist` | Maintained reference implementation; runs entirely in the browser |
+| Dynamic PDF.js import | Keeps the parser and its 1.3 MB worker out of the initial bundle |
+| Follow the PDF's content order for lines | Coordinate sorting interleaves multi-column text; the document's own order is the safer reading-order signal |
+| Flag low-text pages instead of adding OCR | OCR is out of scope; marking the pages honestly is better than a placeholder reader |
 | No automated tests yet | No runner configured; manual verification is documented and test setup is the next quality gate |
