@@ -14,12 +14,20 @@ relationship labels, and detail panels for concepts and connections. Selecting
 a connection fits both endpoints into the space not covered by the detail
 panel. A document workspace accepts a PDF, extracts its text page by page in
 the browser, and shows detected chapters and sections alongside the extracted
-pages. The sample graph content is still a development fixture; AI extraction,
-OCR, persistence, authentication, and backend services are not implemented.
+pages.
+
+Milestone 4A is in progress. The offline core of an AI knowledge-extraction
+pipeline is in place: knowledge schemas, a provider-independent AI contract,
+content-based document fingerprints, chapter-aware chunking, prompt
+construction, tolerant JSON parsing, evidence quote matching, graph
+validation, and duplicate merging, covered by unit tests. Nothing calls a
+model yet, so no extraction has run against a real document. The sample graph
+content is still a development fixture; OCR, persistence, authentication, and
+backend services are not implemented.
 
 ## Requirements
 
-- Node.js 22.13+ or 24+ (developed with Node.js 24.16)
+- Node.js 22.18+ or 24+ (developed with Node.js 24.16)
 - npm 10+ (developed with npm 11)
 
 ## Getting started
@@ -39,6 +47,7 @@ Open the local URL printed by Vite (by default `http://localhost:5173`).
 | `npm run build` | Type-check and create a production build in `dist/` |
 | `npm run preview` | Serve the production build locally |
 | `npm run lint` | Run Oxlint over the project |
+| `npm test` | Run the unit tests with `node:test` |
 
 ## Interaction
 
@@ -78,6 +87,32 @@ Open the local URL printed by Vite (by default `http://localhost:5173`).
   read.
 - **Remove PDF** clears the document and returns to the upload state.
 
+## Knowledge extraction core
+
+Milestone 4A adds the offline rules that decide whether a model-produced claim
+may enter the knowledge graph. The modules are pure and are not wired into the
+interface yet.
+
+- Documents are identified by a SHA-256 digest of their content, not by name,
+  size, or page count.
+- Text is chunked by chapter, then by token budget. Pages that need OCR are
+  skipped, oversized blocks are split, and each chunk records the page and
+  block anchors that may legally be cited.
+- A prompt lists those anchors, states the citation rules, and wraps the
+  document text as untrusted data.
+- A response is parsed without `eval`. Every quote is looked up in the cited
+  block.
+- A quote that is found in the cited block establishes quote authenticity
+  under the matcher's normalization rules. It does not prove the claim follows
+  from it and is not a guarantee against hallucinations, so every claim stays
+  `not-verified` until someone reviews it.
+- A relationship the source did not state is stored as a suggestion for
+  review. Co-occurrence and chapter adjacency never create a relationship.
+  Model-produced direct relationships are prioritized but also require explicit
+  semantic review before becoming graph edges.
+- API keys use a memory-only session store with explicit clearing. There is no
+  persistence, logging, export, or provider integration in this stage.
+
 ## Known limitations
 
 - Extremely long connections may not completely fit in the usable viewport,
@@ -91,6 +126,13 @@ Open the local URL printed by Vite (by default `http://localhost:5173`).
 - Extracted text is plain text. Page images, layout, tables, and figures are
   not reproduced.
 - Reading order follows the PDF's own content order.
+- The knowledge-extraction core is offline only. Nothing calls a model yet, so
+  no extraction has run against a real document, and the graph still shows the
+  sample fixture.
+- A quote that matches the cited block establishes quote authenticity under the
+  matcher's normalization rules, not that the claim it supports is correct.
+- The automated tests cover the knowledge core. The graph and document
+  interfaces are verified manually.
 
 ## Stack
 
@@ -101,6 +143,7 @@ Open the local URL printed by Vite (by default `http://localhost:5173`).
 - PDF.js (`pdfjs-dist`) for in-browser PDF text extraction
 - Plain CSS with system font stack and dark theme tokens
 - Oxlint
+- `node:test` for unit tests
 
 ## Project structure
 
@@ -112,12 +155,27 @@ src/
 ├── index.css                   # Theme tokens and global styles
 ├── types/
 │   ├── graph.ts                # Node, edge, tier, and disclosure types
-│   └── document.ts             # Metadata, page, block, heading, and status types
+│   ├── document.ts             # Metadata, page, block, heading, and status types
+│   ├── knowledge.ts            # Concept, relationship, evidence, chunk, and draft types
+│   └── ai.ts                   # Provider-independent request, response, and credential types
 ├── lib/
 │   ├── disclosure.ts           # Zoom thresholds and label visibility helpers
 │   ├── edgeLabels.ts           # Curve geometry, text measurement, and collision filtering
 │   ├── pdfExtractor.ts         # PDF.js extraction, structure heuristics, OCR flags
-│   └── documentFormat.ts       # File size, date, and page-range formatting
+│   ├── documentFormat.ts       # File size, date, and page-range formatting
+│   ├── sessionCredentials.ts   # Memory-only API key lifecycle
+│   └── knowledge/
+│       ├── config.ts           # Defaults and override resolution
+│       ├── identifiers.ts      # Slugs, stable ids, and the content fingerprint
+│       ├── taxonomy.ts         # Concept kinds, relationship kinds, labels, tier rules
+│       ├── chunking.ts         # Chapter-aware, token-bounded chunk construction
+│       ├── prompts.ts          # Prompt and JSON-schema construction
+│       ├── parsing.ts          # Tolerant JSON recovery and structural validation
+│       ├── evidence.ts         # Evidence lookup and quote matching
+│       ├── validation.ts       # Chunk and graph rules
+│       ├── review.ts           # Explicit semantic review transitions
+│       ├── duplicates.ts       # Duplicate detection and merging
+│       └── merge.ts            # Merge of validated chunk results
 ├── data/
 │   └── sampleGraph.ts          # 20 nodes and 30 edges of sample nervous-system content
 └── components/
@@ -145,8 +203,10 @@ src/
 This phase deliberately excludes authentication, backends, databases, OCR, AI
 APIs, Android tooling, content authoring, search, and persistence. The graph
 reads local sample data only, and PDFs are parsed in the browser without any
-network request. Please see [PROJECT.md](PROJECT.md) before proposing
-additions.
+network request. The approved Milestone 4A work adds the offline knowledge
+core — schemas, chunking, prompting, parsing, evidence matching, validation,
+and merging — with no provider, no network call, and no graph change. Please
+see [PROJECT.md](PROJECT.md) before proposing additions.
 
 ## Design priorities
 

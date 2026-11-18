@@ -5,6 +5,7 @@
 - [x] Milestone 2 — Interactive graph prototype
 - [x] Milestone 2.1 — Mobile graph UX refinement
 - [x] Milestone 3 — PDF upload and text extraction
+- [~] Milestone 4A — AI knowledge extraction core (Stage A and Stage B complete)
 
 Phase 2 remains open for the later exploration items listed below.
 
@@ -65,8 +66,10 @@ Phase 2 remains open for the later exploration items listed below.
 
 ## Phase 4 — Polish and validation (blocked)
 
-- [ ] Add automated tests for disclosure helpers, data integrity, and label
-      transforms
+- [x] Add a lightweight automated test runner (`node:test`) and cover the
+      Milestone 4A knowledge core
+- [ ] Add automated tests for disclosure helpers, graph-data integrity, and
+      label transforms
 - [ ] Run accessibility checks for keyboard and screen-reader use
 - [ ] Profile on a low-end mobile viewport
 - [ ] Finalise documentation after review feedback
@@ -185,6 +188,77 @@ Phase 2 remains open for the later exploration items listed below.
       correctly
 - [x] No runtime console errors
 
+## Milestone 4A — AI knowledge extraction core (in progress)
+
+Scope: the offline core of the knowledge-extraction pipeline. No provider
+adapter, network call, persisted credential, database, or interface.
+
+### Stage A — foundations (complete)
+
+- [x] Define the knowledge schemas: concepts, relationships, evidence, claim
+      verification, chunks, drafts, validation issues, configuration
+- [x] Define the provider-independent AI request, response, and provider
+      contract with no vendor, endpoint, or key
+- [x] Define a provider-independent session-memory credential store that is
+      never persisted, logged, or serialized with its key
+- [x] Add stable concept, relationship, document, and run identifiers
+- [x] Add a SHA-256 content fingerprint for document identity
+- [x] Add pure configuration types with defaults and override resolution
+
+### Stage B — extraction rules (complete)
+
+- [x] Build chapter-aware chunking that never crosses a chapter
+- [x] Skip pages that require OCR and report them
+- [x] Split oversized blocks into parts that keep their block id
+- [x] Build prompts that restrict citations to the chunk anchors
+- [x] Treat the document text as untrusted data in the prompt
+- [x] Recover JSON from a model response without `eval`
+- [x] Validate the payload structure
+- [x] Match evidence quotes against the cited source block
+- [x] Keep quote matching separate from claim verification
+- [x] Validate chunks: vocabulary, ids, page range, evidence, endpoints,
+      confidence, and self references
+- [x] Validate graphs: endpoints, duplicates, cycles, and orphans
+- [x] Detect and merge duplicate concepts and relationships
+- [x] Keep inferred relationships as suggestions and require explicit semantic
+      review before any model-produced relationship becomes a graph edge
+- [x] Reject co-occurrence and chapter-adjacency relationship generation
+- [x] Add `node:test` unit tests and a `tsconfig.test.json` project
+- [x] Add `npm test` and type-check the tests in `npm run build`
+
+### Verification (complete)
+
+- [x] `npm test` — 113 tests, 15 suites, all passing
+- [x] `npm run lint`
+- [x] `npm run build`
+- [x] Malformed JSON is reported rather than thrown
+- [x] A fabricated page number is rejected and never enters the model
+- [x] A quote absent from the source text is rejected and the item is dropped
+- [x] A relationship with an unresolved endpoint is dropped
+- [x] An invalid concept id is reported and regenerated
+- [x] Duplicate concepts are detected, merged, and relationship endpoints are
+      remapped to the surviving concept
+- [x] A relationship kind outside the vocabulary is rejected
+- [x] An inferred relationship without an explicit cross-reference is rejected
+- [x] An explicitly grounded inferred relationship is kept as a suggestion
+- [x] A matched quote leaves the claim verification state untouched
+- [x] A matching quote does not auto-accept a direct relationship
+- [x] Co-occurrence and chapter adjacency do not create graph edges
+- [x] The document fingerprint is independent of file metadata
+- [x] The session credential store does not serialize or persist its key
+- [x] The production bundle is unchanged
+
+### Known limitations
+
+- Nothing in this milestone calls a model. The rules are exercised against
+  synthetic payloads.
+- Claim verification is a recorded state, not an implemented check. Only an
+  explicit review can move an item to `verified` or `rejected`.
+- The concept digest and cross-chunk reconciliation are designed but not yet
+  wired to an orchestrator.
+- The graph renderer is untouched, so the extracted knowledge cannot be shown
+  yet.
+
 ## Backlog — not approved
 
 These items are recorded only so they are not accidentally introduced:
@@ -193,7 +267,9 @@ These items are recorded only so they are not accidentally introduced:
 - Backend services
 - Database or cloud sync
 - OCR implementation
-- AI extraction of document text into knowledge nodes
+- AI extraction of document text into knowledge nodes (Stage A and Stage B of
+  the approved Milestone 4A core are in place; a provider, a network call, and
+  a graph change are not)
 - Android or native app tooling
 - Import/export formats
 - Graph editing, search, and trails before explicit approval

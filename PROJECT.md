@@ -105,10 +105,67 @@ in hand, not a desktop workstation.
   table formatting, a scanned PDF, invalid and corrupted files, and a
   160-page PDF
 
+## Active milestone
+
+### Milestone 4A — AI knowledge extraction (in progress)
+
+The goal is to turn extracted PDF text into an evidence-backed knowledge graph.
+Milestone 4A delivers the offline core of that pipeline and stops short of
+anything that talks to a model.
+
+Stage A, complete:
+
+- Knowledge schemas for concepts, relationships, evidence, chunks, drafts, and
+  validation issues
+- A provider-independent AI contract that names no vendor, endpoint, or key
+- A memory-only session credential store with no persistence path
+- Stable, content-derived document identifiers
+- Pure configuration types with defaults and override resolution
+
+Stage B, complete:
+
+- Chapter-aware chunking that never crosses a chapter, skips pages that need
+  OCR, and splits oversized blocks
+- Prompt construction that restricts citations to the anchors of the chunk and
+  treats the document text as untrusted data
+- Tolerant JSON recovery and structural schema validation
+- Evidence quote matching against the cited source block
+- Chunk and graph validation rules
+- Explicit semantic review transitions for relationship suggestions
+- Duplicate detection and merging for concepts and relationships
+- Unit tests run by `node:test`
+
+Four decisions shape the design and are enforced in code:
+
+1. **Quote matching is not claim verification.** A quote found in the cited
+   block establishes quote authenticity under the matcher's normalization
+   rules. It does not establish that the claim follows from the quote and is
+   not a guarantee against hallucinations. Every extracted item starts as
+   `not-verified`, and only an explicit semantic review can change that.
+2. **Inferred relationships are suggestions.** A link the source did not state
+   is stored for review and never becomes a graph edge on its own. Co-occurrence
+   and chapter adjacency do not create relationships at all. Direct candidates
+   are prioritized, but all model-produced relationships require semantic
+   review before becoming graph edges.
+3. **The document fingerprint is content based.** A SHA-256 digest of the
+   canonical extracted content, never the file name, size, or page count.
+4. **Credentials stay in session memory.** No key is written to storage, logs,
+   or exports. The memory-only store has no persistence path and can be
+   cleared explicitly.
+
+Deliberately excluded from this milestone: provider adapters, network calls,
+persistence, an interface, and any change to the graph renderer.
+
 ## Current limitations
 
 - Content is a local sample fixture; there is no graph authoring, and no AI
   extraction of document text into knowledge nodes.
+- The Milestone 4A knowledge core is offline only. Nothing calls a model yet,
+  so no extraction has ever been run against a real document.
+- Evidence matching establishes that a quote occurs in the cited block under
+  the matcher's normalization rules, not that the claim it supports is
+  correct. Claim verification is a recorded state that only an explicit
+  semantic review can change.
 - There is no persistence, search, back/forward trail, or empty-state flow.
 - OCR is not implemented. Pages that need it are only flagged.
 - Heading detection is heuristic. It can miss headings that use unusual
@@ -119,8 +176,8 @@ in hand, not a desktop workstation.
   text in an unusual order may extract in that order.
 - Cytoscape is imported eagerly. Code-splitting is deferred because the graph
   is the primary screen rather than a secondary route.
-- There is no automated test runner yet. Graph data and interactions have been
-  verified manually and with temporary headless-browser probes.
+- The automated runner covers the Milestone 4A knowledge core only. The graph
+  and document interfaces are still verified manually.
 - Extremely long edges may not completely fit in the usable viewport, even at
   the graph's minimum zoom.
 - Selected edge labels may remain hidden when endpoint fitting drops the zoom
@@ -139,6 +196,12 @@ explicit approval:
 - OCR implementation
 - Android or other native mobile tooling
 - Graph editing, authoring, search, trails, or other exploration features
+
+Milestone 4A was approved for the offline knowledge core only: schemas, the
+provider contract, chunking, prompting, parsing, evidence matching,
+validation, duplicate merging, and their tests. A provider adapter, a network
+call, a persisted credential, a database, or a graph change still needs its own
+approval.
 
 ## Milestone 2 success criteria
 
@@ -184,3 +247,32 @@ explicit approval:
 - The upload and document interfaces work at 320 px and 390 px widths without
   horizontal overflow.
 - `npm run build` and `npm run lint` complete without errors.
+
+## Milestone 4A success criteria
+
+Stage A and Stage B, current scope:
+
+- Knowledge schemas exist for concepts, relationships, evidence, chunks,
+  drafts, validation issues, and configuration.
+- The AI request and response contract names no provider, endpoint, or key,
+  and the credential store exists only for session memory.
+- Document identity comes from a SHA-256 digest of the content, not from the
+  file name, size, or page count.
+- Chunking is chapter aware, never crosses a chapter, skips pages that need
+  OCR, splits oversized blocks, and records the anchors that may be cited.
+- A prompt states the citation rules, the relationship vocabulary, and the
+  output contract, and wraps the document text as untrusted data.
+- Malformed JSON is recovered when possible and reported when not.
+- A quote is only reported as matched when it is found in the cited block, and
+  a matched quote never marks a claim as verified.
+- A page number or block id that the document does not contain can never
+  reach the knowledge model.
+- A relationship the source did not state is stored as a suggestion and is
+  never accepted automatically. Direct relationship candidates are also
+  reviewed explicitly before they can become graph edges. Co-occurrence and
+  chapter adjacency never create relationships or edges.
+- Duplicate concepts and duplicate relationships are detected and merged, and
+  relationship endpoints are remapped to surviving canonical concepts.
+- The rules are covered by unit tests run with `node:test`.
+- `npm run build`, `npm run lint`, and `npm test` complete without errors, and
+  the production bundle is unchanged.

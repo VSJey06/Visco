@@ -6,8 +6,16 @@ Milestones 2, 2.1, and 3 are complete: a local interactive Cytoscape knowledge
 graph with pan/zoom, progressive disclosure, collision-aware curved edge
 labels, concept/connection detail panels, and viewport fitting for selected
 edge endpoints; plus a document workspace that extracts PDF text in the browser
-with page numbers, detected structure, and OCR warnings. Graph content is still
-a development fixture. AI extraction, OCR, persistence, authoring, and
+with page numbers, detected structure, and OCR warnings.
+
+Milestone 4A, Stage A and Stage B define the offline core of an AI
+knowledge-extraction pipeline: knowledge schemas, a provider-independent AI
+contract, stable identifiers and a content-based document fingerprint,
+chapter-aware chunking, prompt construction, tolerant JSON parsing, evidence
+quote matching, graph validation, and duplicate merging — all as pure modules
+with unit tests. No provider adapter, network call, persisted credential,
+database, or interface is included, so no runtime behaviour changes yet. Graph
+content is still a development fixture. OCR, persistence, authoring, and
 networking are not implemented.
 
 ## Stack
@@ -20,6 +28,8 @@ networking are not implemented.
 | Graph renderer | Cytoscape.js 3.35 | Canvas rendering, gestures, selection, viewport |
 | Label overlay | SVG | `textPath` labels on the same Bézier curves |
 | PDF parsing | PDF.js (`pdfjs-dist`) 6.5 | In-browser text extraction and metadata |
+| Knowledge extraction | Plain TypeScript modules | Pure, offline, provider-independent |
+| Test runner | `node:test` | Built into Node, no test dependency |
 | Linting | Oxlint | Configured with React and TypeScript rules |
 | Styling | Plain CSS | No CSS framework or runtime style library |
 | State | React local state | Selection, viewport, and document state in the workspace |
@@ -38,6 +48,19 @@ networking are not implemented.
   the device.
 - **No backend, auth, database, or AI services** in this phase.
 - **Read-only graph:** nodes and edges cannot be edited or created yet.
+- **No credentials at rest:** an API key is never written to source, storage,
+  logs, or exports. The first-release credential store is memory-only and can
+  be cleared explicitly; it has no persistence or logging path.
+- **Evidence matching is not claim verification.** Finding a quote in the
+  cited block establishes that the quote occurs there under the matcher's
+  normalization rules. It does not establish that the quote entails the claim
+  and is not a guarantee against hallucinations. The two concepts remain
+  separate.
+- **Inferred links are suggestions.** A relationship the model did not read
+  directly from the source is stored as a suggestion for review and never
+  becomes a graph edge automatically. Model-produced direct relationships are
+  also held until explicit semantic review; direct candidates are prioritized
+  over inferred suggestions.
 
 ## Directory structure
 
@@ -50,6 +73,7 @@ Visco/
 ├── tsconfig.json
 ├── tsconfig.app.json
 ├── tsconfig.node.json
+├── tsconfig.test.json
 ├── .oxlintrc.json
 ├── public/
 │   └── favicon.svg
@@ -60,12 +84,27 @@ Visco/
 │   ├── index.css
 │   ├── types/
 │   │   ├── graph.ts
-│   │   └── document.ts
+│   │   ├── document.ts
+│   │   ├── knowledge.ts
+│   │   └── ai.ts
 │   ├── lib/
 │   │   ├── disclosure.ts
 │   │   ├── edgeLabels.ts
 │   │   ├── pdfExtractor.ts
-│   │   └── documentFormat.ts
+│   │   ├── documentFormat.ts
+│   │   ├── sessionCredentials.ts
+│   │   └── knowledge/
+│   │       ├── config.ts
+│   │       ├── identifiers.ts
+│   │       ├── taxonomy.ts
+│   │       ├── chunking.ts
+│   │       ├── prompts.ts
+│   │       ├── parsing.ts
+│   │       ├── evidence.ts
+│   │       ├── validation.ts
+│   │       ├── review.ts
+│   │       ├── duplicates.ts
+│   │       └── merge.ts
 │   ├── data/
 │   │   └── sampleGraph.ts
 │   └── components/
@@ -80,6 +119,18 @@ Visco/
 │       ├── ExtractionProgress.tsx
 │       ├── DocumentOutline.tsx
 │       └── ExtractedTextViewer.tsx
+├── tests/
+│   └── knowledge/
+│       ├── identifiers.test.ts
+│       ├── config.test.ts
+│       ├── chunking.test.ts
+│       ├── prompts.test.ts
+│       ├── parsing.test.ts
+│       ├── evidence.test.ts
+│       ├── validation.test.ts
+│       ├── review.test.ts
+│       ├── sessionCredentials.test.ts
+│       └── duplicates.test.ts
 ├── PROJECT.md
 ├── ARCHITECTURE.md
 ├── TASKS.md
@@ -413,6 +464,294 @@ button when it closes.
 - Reading order follows the PDF's own content order.
 - PDF.js configuration options are not exposed.
 
+## Knowledge extraction architecture
+
+Milestone 4A, Stage A and Stage B. This section describes the offline core: the
+schemas, the pure transformations, and the rules that decide whether a
+model-produced claim may enter the knowledge graph. No provider adapter, HTTP
+request, persisted credential, persistence layer, or interface is part of this
+stage, so nothing in the running app changes.
+
+### Layers
+
+| Module | Responsibility | State |
+| --- | --- | --- |
+| `src/types/knowledge.ts` | Schemas for concepts, relationships, evidence, chunks, drafts, issues, configuration | none |
+| `src/types/ai.ts` | Provider-independent request/response and credential-store contracts | none |
+| `src/lib/sessionCredentials.ts` | Memory-only credential lifecycle with explicit clearing | memory only |
+| `src/lib/knowledge/config.ts` | Default configuration and override resolution | none |
+| `src/lib/knowledge/identifiers.ts` | Slugs, duplicate keys, stable ids, content fingerprint | none |
+| `src/lib/knowledge/taxonomy.ts` | Concept kinds, relationship kinds, labels, tier rules | none |
+| `src/lib/knowledge/chunking.ts` | Chapter-aware, token-bounded chunk construction | none |
+| `src/lib/knowledge/prompts.ts` | Prompt and JSON-schema construction for one chunk | none |
+| `src/lib/knowledge/parsing.ts` | Tolerant JSON extraction and structural schema validation | none |
+| `src/lib/knowledge/evidence.ts` | Evidence source lookup and quote matching | none |
+| `src/lib/knowledge/validation.ts` | Business rules for chunks and merged graphs | none |
+| `src/lib/knowledge/review.ts` | Explicit semantic review transitions for relationship suggestions | none |
+| `src/lib/knowledge/duplicates.ts` | Duplicate detection and merging of concepts and relationships | none |
+| `src/lib/knowledge/merge.ts` | Merge of validated chunk results and endpoint remapping | none |
+
+Every extraction module is a pure function over plain data. The credential
+store is the one deliberate exception: it owns only in-memory session state
+and has no persistence path. The orchestrator, provider adapters, persistence,
+and the interface are later stages and are deliberately absent so the rules can
+be tested without a model, a network, or a browser.
+
+### Knowledge data model
+
+`src/types/knowledge.ts` defines the intermediate model. It is deliberately
+richer than the renderer types in `src/types/graph.ts`, which stay unchanged.
+
+```ts
+type ConceptKind =
+  | 'main_concept'
+  | 'supporting_concept'
+  | 'entity'
+  | 'process'
+
+type RelationshipKind =
+  | 'CAUSES'
+  | 'ENABLES'
+  | 'PART_OF'
+  | 'DEPENDS_ON'
+  | 'COMPARES'
+  | 'EXAMPLE_OF'
+  | 'SEQUENCE'
+  | 'ASSOCIATED_WITH'
+
+type EvidenceRef = {
+  pageNumber: number
+  blockId: string
+  quote: string
+  matchStatus: 'matched'
+}
+
+type ClaimVerification = {
+  status: 'not-verified' | 'verified' | 'rejected'
+  method: 'manual-review' | 'none'
+  detail: string | null
+}
+
+type ExtractedRelationship = {
+  id: string
+  sourceId: string
+  targetId: string
+  kind: RelationshipKind
+  label: string
+  statement: string
+  evidence: EvidenceRef[]
+  basis: 'direct' | 'inferred'
+  inference: { kind: InferenceKind; rationale: string } | null
+  confidence: number
+  chunkIds: string[]
+  verification: ClaimVerification
+  review: 'accepted' | 'suggested' | 'rejected'
+}
+```
+
+`definition`, `fact`, `condition`, and `example` are modelled as attributes of a
+concept rather than as separate nodes, so a document's supporting sentences do
+not swamp the graph.
+
+### Evidence matching versus claim verification
+
+These are two different questions and the model keeps them apart:
+
+- **Evidence matching** asks *does the cited block contain this quote under the
+  matcher's normalization rules?* The matcher normalizes whitespace and
+  typographic punctuation, then looks for the quote inside the cited block. A
+  match establishes quote authenticity only.
+- **Claim verification** asks *does the cited text actually support the claim?*
+  That cannot be decided by a substring search, so every extracted item starts
+  as `status: 'not-verified', method: 'none'`. Only an explicit semantic review
+  can move an item to `verified` or `rejected`.
+
+A matched quote is not proof that the claim is correct and is not described as
+a guarantee against hallucinations. Validation messages, documentation, and
+the interface must use the same distinction.
+
+### Directly supported versus inferred relationships
+
+`basis` records how a relationship candidate was obtained:
+
+- `direct` — the model reports that the source explicitly states the
+  connection and supplies a quote found in the cited block. Direct candidates
+  are prioritized over inferred suggestions, but the quote match alone does
+  not establish semantic entailment.
+- `inferred` — the model proposes a connection and supplies a non-empty
+  rationale and grounded quote. The relationship is retained as a suggestion
+  for explicit review.
+
+Every model-produced relationship starts with `review: 'suggested'`. Only an
+explicit semantic review can accept or reject it. A graph edge requires both
+`review: 'accepted'` and `verification.status: 'verified'`; a suggestion is
+stored with the knowledge data but is not a graph edge.
+
+In the first release, no relationship is generated from co-occurrence in a
+chunk or adjacency between chapters. Those signals do not create relationship
+records or graph edges.
+
+### Identifiers and the document fingerprint
+
+`src/lib/knowledge/identifiers.ts` provides:
+
+- `slugify` and `normalizeTitle` — normalised, id-safe names.
+- `titleKey` — the duplicate-detection key: lower-cased, stripped of
+  punctuation and leading articles.
+- `createConceptId` and `createRelationshipId` — deterministic ids that are
+  stable across runs, so a re-extraction can be compared with the previous one.
+- `computeDocumentFingerprint` — a SHA-256 digest of canonical extracted
+  content.
+- `computeExtractedDocumentFingerprint` — applies the same fingerprint to the
+  ordered extracted block text, excluding file metadata and pagination.
+
+The fingerprint is content-based. File name, file size, and page count are
+metadata that can stay identical across two different documents, so they are
+never the basis of identity. SHA-256 gives collision resistance appropriate for
+detecting a changed or swapped document. The full digest remains available;
+identifiers use at least 128 bits of it.
+
+### Chunking
+
+`chunkDocument(document, config)` produces `KnowledgeChunk[]`:
+
+1. Pages are walked in order. Pages flagged `requiresOcr` are skipped and
+   reported, because a model cannot read a scanned page and guessing at its
+   contents would be invention.
+2. Blocks are grouped into units. A block larger than the token budget is
+   split on line and character boundaries; the parts keep the original block
+   id with a `#part` suffix. No individual unit exceeds the configured token
+   budget.
+3. Chapter membership follows heading blocks in reading order, so two chapter
+   headings on the same page still create separate chunks.
+4. A chunk closes when the chapter changes or the token budget would be
+   exceeded. A chunk never spans two chapters.
+5. Trailing units within the overlap budget are carried into the next chunk of
+   the same chapter, so a concept introduced at a boundary is not lost.
+6. Each chunk records its anchors: the page number, exact anchor id, and exact
+   segment text that may legally be cited. A quote is matched against the cited
+   segment, not against another part of the same source block.
+
+Token counts are estimated from character length, not a tokenizer, so no extra
+dependency is needed. Estimates cover source text; anchor labels are metadata
+around that text.
+
+### Prompts
+
+`buildExtractionRequest` produces a provider-independent `AiRequest`:
+
+- The system prompt states the task, the relationship and concept vocabulary,
+  the output contract, and the rules: cite only listed anchors, never invent a
+  page or block id, copy quotes verbatim, omit anything the text does not
+  support, and never infer a link from co-occurrence or adjacency alone.
+- The user prompt carries the chunk as JSON-encoded untrusted data inside
+  `<document_chunk_json>` delimiters, the permitted anchor list, and the digest
+  of concepts already known from earlier chunks.
+- JSON encoding prevents source text from closing the prompt's data delimiter.
+  The chunk text is explicitly labelled as untrusted source material. It is
+  data, never instructions.
+
+### Parsing and validation
+
+`extractJsonPayload` recovers JSON from a model response without `eval`: code
+fences are stripped, then the first balanced object outside strings is parsed.
+A failure produces an `invalid-json` issue rather than an exception.
+
+`validatePayloadSchema` checks the published output contract: required fields,
+types, enums, finite confidence ranges, evidence shapes, and unsupported
+fields.
+
+`validateChunkPayload` applies the business rules to one chunk:
+
+| Rule | Code | Outcome |
+| --- | --- | --- |
+| Response was not valid JSON | `invalid-json` | chunk rejected |
+| Top-level payload shape is invalid | `schema-mismatch` | chunk rejected |
+| Required item field missing or wrong type | `schema-mismatch` | item dropped, valid siblings retained |
+| Concept kind outside the vocabulary | `unknown-concept-kind` | item dropped |
+| Relationship kind outside the vocabulary | `unsupported-relationship` | item dropped |
+| Inferred relationship without rationale or grounding | `unsupported-relationship` | item dropped |
+| Id does not match the id grammar | `invalid-concept-id` | canonical id generated, issue raised |
+| Page number outside the document or outside the chunk anchors | `page-out-of-range` | reference dropped, item dropped when it was the only support |
+| Cited block does not exist | `block-not-found` | reference dropped, item dropped when it was the only support |
+| Quote not found in the cited block | `quote-not-found` | reference dropped, item dropped when it was the only support |
+| No usable reference | `missing-page-reference` | item dropped |
+| Relationship endpoint is not a known concept | `missing-endpoint` | relationship dropped |
+| Relationship points at itself | `self-loop` | relationship dropped |
+| Confidence is not a finite number | `invalid-confidence` | item dropped |
+| Confidence is outside 0–1 | `invalid-confidence` | item rejected |
+| Confidence below the threshold for its basis | `confidence-below-threshold` | item dropped |
+
+A concept or relationship needs at least one reference whose quote was found in
+the cited block. Only matched references enter the knowledge model. An
+inferred relationship additionally needs an explicit-cross-reference rationale
+and remains a suggestion. A direct relationship also remains a suggestion
+until semantic review because quote matching cannot verify entailment.
+
+`validateGraph` applies the graph-level rules after merging: endpoints resolve
+against the merged concept set, ids and relationship vocabulary are checked,
+duplicate concepts and relationships are reported, self-references and
+`PART_OF` cycles are reported, and concepts with no approved relationship are
+reported as orphans. Only relationships that passed explicit semantic review
+participate in graph-edge, connectivity, and cycle rules; suggestions remain
+stored candidates rather than edges.
+
+### Duplicates and merging
+
+`src/lib/knowledge/duplicates.ts` keys concepts by `titleKey` and relationships
+by kind plus canonical endpoints. Symmetric kinds (`COMPARES`,
+`ASSOCIATED_WITH`) use a lexicographic endpoint order so the same pair is not
+counted twice. Merging keeps the strongest definition, the highest tier, the
+union of aliases, evidence, attributes, and chunk ids, and the summed mention
+count. Direct relationship candidates take priority over inferred duplicates.
+Merging does not inherit semantic verification unless every merged member was
+explicitly verified. When duplicate concepts are merged, relationship endpoints
+are remapped to the surviving canonical id before endpoint validation.
+
+### Pipeline shape
+
+The intended full pipeline is:
+
+1. Prepare — fingerprint the document, open a run.
+2. Chunk — build the chunk list.
+3. Extract — one provider request per chunk.
+4. Parse — recover and structurally validate the JSON.
+5. Match — locate each quote in the cited block.
+6. Validate — apply the chunk rules.
+7. Review — explicitly accept or reject relationship suggestions.
+8. Repair — bounded re-ask carrying the issues (later stage).
+9. Quarantine — store a failed chunk for inspection (later stage).
+10. Merge — build the concept registry and detect duplicates.
+11. Link — cross-chunk relationships, as suggestions only (later stage).
+12. Validate graph — apply the graph-level rules.
+13. Project — map the draft onto `KnowledgeNode` and `KnowledgeEdge` for the
+    existing renderer, with deterministic positions (later stage).
+
+Stage B contains the pure parts of steps 1, 2, 4, 5, 6, 7, 10, and 12. Step 3
+needs a provider, steps 8 and 11 need persistence and orchestration, and step
+13 is the point at which the graph changes, which this milestone does not
+reach.
+
+### Security posture
+
+- No credential is persisted, logged, exported, or included in an error message.
+  The first-release store keeps keys in memory only and exposes an explicit
+  clear operation.
+- Model output is untrusted input: it is parsed without `eval`, checked
+  against a schema, and canonical ids are generated rather than trusted.
+- Document text is untrusted input as well. It is JSON-encoded, delimited,
+  and labelled in the prompt, and the model has no tools, so text in a PDF
+  cannot cause an action.
+
+### Known limitations
+
+- Nothing in this stage calls a model. The rules are exercised against
+  synthetic payloads in the test suite.
+- The extraction rules are written for one chunk at a time. Cross-chunk
+  reasoning and the concept digest are designed but not yet wired together.
+- Claim verification is a recorded state, not an implemented check. Only an
+  explicit review can change it.
+
 ## Integration rules
 
 1. **Keep Cytoscape at the boundary.** Runtime imports live in
@@ -433,6 +772,21 @@ button when it closes.
    task must be released on completion, failure, and cancellation.
 9. **Do not change graph behavior.** The document workspace layers over the
    graph; it must not remount, re-layout, or reset it.
+10. **Keep the knowledge core pure.** Modules under `src/lib/knowledge/` take
+    plain data and return plain data. No module may reach for the network,
+    storage, the DOM, or a global clock unless it is explicitly an
+    orchestrator.
+11. **Never invent provenance.** A page number or block id may only reach the
+    knowledge model by being read from the extracted document. The validator
+    may narrow the model's claims; it may never widen them.
+12. **Match quotes, verify claims separately.** A quote found in the source is
+    reported as a match, not as proof that the claim is supported.
+13. **Keep inferred links as suggestions.** A relationship the source did not
+    state is never promoted to a graph edge without explicit review.
+14. **Use explicit file extensions in the knowledge core.** Modules under
+    `src/lib/knowledge/` import relatives with the `.ts` extension so Node can
+    load them directly for tests. The application modules keep their existing
+    extensionless style.
 
 ## Performance notes
 
@@ -459,33 +813,57 @@ initial graph view.
 
 ## Testing strategy
 
-There is no automated test runner configured. Current verification consists of:
+`node:test` runs the knowledge-core unit tests with no test dependency:
 
-- TypeScript compilation through `npm run build`
-- Oxlint through `npm run lint`
-- Manual and headless-browser checks at 320, 390, and 1440 px:
-  - page overflow
-  - initial fit
-  - mouse/touch panning and pinch zoom
-  - threshold label changes
-  - curved label alignment through zoom
-  - collision-free visible labels across overview-to-detail zoom levels
-  - node/edge selection, dimming, endpoint emphasis, panel layout, focus, and
-    Escape
-  - selected-edge endpoint fitting around the mobile sheet and desktop card
-  - no unexpected console errors
-  - PDF upload by picker and drag-and-drop, page counts, page navigation,
-    detected headings and page ranges, scanned-page warnings, error states,
-    progress, cancellation, and cleanup
-  - a 160-page PDF for incremental extraction and interface responsiveness
-  - a two-column and table PDF for reading order
-  - graph selection preserved while the document workspace is open
-  - production preview serving the workspace chunk, PDF.js chunk, and worker
+```sh
+npm test
+```
 
-Before the next feature milestone, add a lightweight runner (for example
-`node:test` or Vitest) for disclosure helpers, graph-data integrity, edge
-label geometry, and PDF extraction helpers. Browser-level smoke tests should
-then be committed rather than kept as temporary probes.
+The runner executes the TypeScript test files directly through Node's native
+type stripping, and `tsconfig.test.json` type-checks them as part of
+`npm run build`.
+
+Coverage is concentrated on the rules that decide whether a model-produced
+claim may enter the graph:
+
+- malformed JSON recovery and structural schema rejection
+- fabricated page numbers and block ids that do not exist
+- quotes that are absent from the cited source block
+- relationship endpoints that do not resolve
+- ids that violate the id grammar
+- duplicate concepts and duplicate relationships
+- relationship kinds outside the vocabulary, including inferred relationships
+  without a rationale
+- chunk boundaries, chapter alignment, overlap, and skipped OCR pages
+- prompt contents, including the anchor whitelist and the untrusted-content
+  delimiters
+- content-based fingerprint stability and sensitivity
+- the separation between quote matching and claim verification, and the
+  suggestion state of inferred relationships
+
+The rest of the app is verified as before: TypeScript compilation through
+`npm run build`, Oxlint through `npm run lint`, and manual and headless-browser
+checks at 320, 390, and 1440 px:
+- page overflow
+- initial fit
+- mouse/touch panning and pinch zoom
+- threshold label changes
+- curved label alignment through zoom
+- collision-free visible labels across overview-to-detail zoom levels
+- node/edge selection, dimming, endpoint emphasis, panel layout, focus, and
+  Escape
+- selected-edge endpoint fitting around the mobile sheet and desktop card
+- no unexpected console errors
+- PDF upload by picker and drag-and-drop, page counts, page navigation,
+  detected headings and page ranges, scanned-page warnings, error states,
+  progress, cancellation, and cleanup
+- a 160-page PDF for incremental extraction and interface responsiveness
+- a two-column and table PDF for reading order
+- graph selection preserved while the document workspace is open
+- production preview serving the workspace chunk, PDF.js chunk, and worker
+
+Browser-level smoke tests should still be committed rather than kept as
+temporary probes.
 
 ## Decision log
 
@@ -509,3 +887,11 @@ then be committed rather than kept as temporary probes.
 | Follow the PDF's content order for lines | Coordinate sorting interleaves multi-column text; the document's own order is the safer reading-order signal |
 | Flag low-text pages instead of adding OCR | OCR is out of scope; marking the pages honestly is better than a placeholder reader |
 | No automated tests yet | No runner configured; manual verification is documented and test setup is the next quality gate |
+| `node:test` for the knowledge core | Built into Node, no test dependency, and the runner was already the documented next quality gate |
+| Rich knowledge model beside the renderer types | Evidence, confidence, basis, and review state cannot be squeezed into `sourcePage: string` without losing them |
+| Quote matching kept separate from claim verification | A normalized substring match establishes that a quote occurs in the cited block, not that the claim follows from it |
+| Inferred relationships stored as suggestions | A link the source did not state should be reviewed, not silently drawn as fact |
+| Model-produced relationships require semantic review | Quote matching can authenticate a citation but cannot establish entailment, so direct and inferred candidates remain suggestions until reviewed |
+| SHA-256 content fingerprint | File name, size, and page count can match across different documents; identity has to come from the content |
+| Credentials in session memory only | A key that is never persisted cannot leak from storage, exports, or logs |
+| Explicit `.ts` extensions in the knowledge core | Node loads the modules directly for tests, and extensionless relative imports would fail there |
